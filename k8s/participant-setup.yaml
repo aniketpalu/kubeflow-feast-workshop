@@ -24,7 +24,7 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 5Gi
+      storage: 1Gi
 
 ---
 apiVersion: apps/v1
@@ -68,9 +68,9 @@ spec:
           resources:
             requests:
               memory: 512Mi
-              cpu: 500m
+              cpu: 250m
             limits:
-              memory: 2Gi
+              memory: 1500Mi
               cpu: "1"
           command:
             - /bin/sh
