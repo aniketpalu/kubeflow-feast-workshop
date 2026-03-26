@@ -81,7 +81,7 @@ spec:
             - |
               set -e
               mkdir -p /mnt/notebooks /mnt/feast_repo /mnt/models /mnt/data
-              pip install --no-cache-dir jupyterlab "feast[postgres,grpc]" psycopg2-binary sqlalchemy scikit-learn joblib pandas requests grpcio grpcio-tools grpcio-reflection grpcio-health-checking kubeflow boto3
+              pip install --no-cache-dir jupyterlab "feast[postgres,grpc]" psycopg2-binary sqlalchemy scikit-learn joblib pandas requests grpcio grpcio-tools grpcio-reflection grpcio-health-checking kubeflow boto3 kfp kubeflow
               exec jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --ServerApp.token='workshop' --notebook-dir=/mnt
           volumeMounts:
             - name: workshop-storage
