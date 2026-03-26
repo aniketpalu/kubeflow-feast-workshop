@@ -1,0 +1,224 @@
+# Workshop Participant Setup
+# Usage: sed 's/REPLACE_NS/your-namespace/g' participant-setup.yaml | oc apply -f -
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: REPLACE_NS
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jupyter
+  namespace: REPLACE_NS
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: workshop-pvc
+  namespace: REPLACE_NS
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jupyter
+  namespace: REPLACE_NS
+  labels:
+    app: jupyter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jupyter
+  template:
+    metadata:
+      labels:
+        app: jupyter
+    spec:
+      serviceAccountName: jupyter
+      containers:
+        - name: jupyter
+          image: registry.access.redhat.com/ubi9/python-311:latest
+          workingDir: /mnt
+          ports:
+            - containerPort: 8888
+              name: jupyter
+            - containerPort: 6566
+              name: feast
+            - containerPort: 6567
+              name: feast-registry
+            - containerPort: 8815
+              name: feast-offline
+            - containerPort: 8889
+              name: feast-ui
+          env:
+            - name: HOME
+              value: /opt/app-root/src
+            - name: WORKSHOP_NS
+              value: REPLACE_NS
+          resources:
+            requests:
+              memory: 512Mi
+              cpu: 500m
+            limits:
+              memory: 2Gi
+              cpu: "1"
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              set -e
+              mkdir -p /mnt/notebooks /mnt/feast_repo /mnt/models /mnt/data
+              pip install --no-cache-dir jupyterlab "feast[postgres,grpc]" psycopg2-binary sqlalchemy scikit-learn joblib pandas requests grpcio grpcio-tools grpcio-reflection grpcio-health-checking kubeflow boto3
+              exec jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --ServerApp.token='workshop' --notebook-dir=/mnt
+          volumeMounts:
+            - name: workshop-storage
+              mountPath: /mnt
+      volumes:
+        - name: workshop-storage
+          persistentVolumeClaim:
+            claimName: workshop-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jupyter-service
+  namespace: REPLACE_NS
+spec:
+  type: ClusterIP
+  selector:
+    app: jupyter
+  ports:
+    - name: jupyter
+      port: 8888
+      targetPort: 8888
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: feast-service
+  namespace: REPLACE_NS
+spec:
+  type: ClusterIP
+  selector:
+    app: jupyter
+  ports:
+    - name: feast
+      port: 6566
+      targetPort: 6566
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: feast-registry-service
+  namespace: REPLACE_NS
+spec:
+  type: ClusterIP
+  selector:
+    app: jupyter
+  ports:
+    - name: feast-registry
+      port: 6567
+      targetPort: 6567
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: feast-offline-service
+  namespace: REPLACE_NS
+spec:
+  type: ClusterIP
+  selector:
+    app: jupyter
+  ports:
+    - name: feast-offline
+      port: 8815
+      targetPort: 8815
+
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: jupyter-route
+  namespace: REPLACE_NS
+spec:
+  to:
+    kind: Service
+    name: jupyter-service
+  port:
+    targetPort: jupyter
+  tls:
+    termination: edge
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: feast-ui-service
+  namespace: REPLACE_NS
+spec:
+  type: ClusterIP
+  selector:
+    app: jupyter
+  ports:
+    - name: feast-ui
+      port: 8889
+      targetPort: 8889
+
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: feast-ui-route
+  namespace: REPLACE_NS
+spec:
+  to:
+    kind: Service
+    name: feast-ui-service
+  port:
+    targetPort: feast-ui
+  tls:
+    termination: edge
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: minio-s3-secret
+  namespace: REPLACE_NS
+  annotations:
+    serving.kserve.io/s3-endpoint: minio-service.kubeflow.svc.cluster.local:9000
+    serving.kserve.io/s3-usehttps: "0"
+    serving.kserve.io/s3-region: us-east-1
+    serving.kserve.io/s3-useanoncredential: "false"
+stringData:
+  AWS_ACCESS_KEY_ID: minio
+  AWS_SECRET_ACCESS_KEY: minio123
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kserve-minio-sa
+  namespace: REPLACE_NS
+  annotations:
+    serving.kserve.io/s3-endpoint: minio-service.kubeflow.svc.cluster.local:9000
+    serving.kserve.io/s3-usehttps: "0"
+    serving.kserve.io/s3-region: us-east-1
+    serving.kserve.io/s3-useanoncredential: "false"
+secrets:
+  - name: minio-s3-secret

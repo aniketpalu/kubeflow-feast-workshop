@@ -1,0 +1,21 @@
+# KServe InferenceService for fraud detection model from MinIO.
+# Usage: sed 's/REPLACE_NS/your-namespace/g' kserve-inferenceservice.yaml | oc apply -f -
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: fraud-detector
+  namespace: REPLACE_NS
+spec:
+  predictor:
+    serviceAccountName: kserve-minio-sa
+    model:
+      modelFormat:
+        name: sklearn
+      storageUri: "s3://models/fraud-detector-REPLACE_NS"
+      resources:
+        requests:
+          memory: "512Mi"
+          cpu: "250m"
+        limits:
+          memory: "1Gi"
+          cpu: "500m"

@@ -1,0 +1,19 @@
+# Remote Feast config for training pods.
+# Usage: sed 's/REPLACE_NS/your-namespace/g' feast-remote-config-cm.yaml | oc apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: feast-remote-config
+  namespace: REPLACE_NS
+data:
+  feature_store.yaml: |
+    project: fraud_detection
+    provider: local
+    registry:
+      registry_type: remote
+      path: feast-registry-service.REPLACE_NS.svc.cluster.local:6567
+    offline_store:
+      type: remote
+      host: feast-offline-service.REPLACE_NS.svc.cluster.local
+      port: 8815
+    entity_key_serialization_version: 3

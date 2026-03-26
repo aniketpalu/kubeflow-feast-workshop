@@ -1,0 +1,17 @@
+project: fraud_detection
+provider: local
+registry:
+  type: file
+  path: /mnt/feast_repo/registry.pb
+offline_store:
+  type: postgres
+  host: postgres.mlops-workshop.svc.cluster.local
+  port: 5432
+  database: feast
+  db_schema: public
+  user: feast
+  password: feast
+online_store:
+  type: sqlite
+  path: /mnt/feast_repo/online_store.db
+entity_key_serialization_version: 3
