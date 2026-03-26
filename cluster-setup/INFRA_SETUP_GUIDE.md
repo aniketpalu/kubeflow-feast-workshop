@@ -18,7 +18,6 @@ How we built the MLOps workshop from scratch on a ROSA (OpenShift on AWS) cluste
 ```bash
 oc apply -f k8s/namespace.yaml        # mlops-workshop namespace
 oc apply -f k8s/pvc.yaml              # workshop-pvc (5Gi) for Jupyter
-oc apply -f k8s/model-pvc.yaml        # model-pvc (1Gi) for KServe
 ```
 
 ---
@@ -149,30 +148,33 @@ oc patch configmap inferenceservice-config -n kserve --type merge \
 
 ---
 
-## Phase 9: Train Model + Deploy to KServe
+## Phase 9: Upload Initial Model to MinIO + Test KServe
 
-Train locally:
+Train a model locally and upload to MinIO (no PVC needed):
 ```bash
 cd training
-MODEL_DIR=models python train.py
+MODEL_DIR=/tmp/models python train.py
 ```
 
-Copy model to cluster:
+Upload to MinIO from the Jupyter pod:
 ```bash
-# Temporary pod to write to model-pvc
-oc run model-loader --image=registry.access.redhat.com/ubi9/python-311:latest \
-  --restart=Never -n mlops-workshop \
-  --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"model-loader","image":"registry.access.redhat.com/ubi9/python-311:latest","command":["sleep","300"],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"model-vol","mountPath":"/models"}]}],"volumes":[{"name":"model-vol","persistentVolumeClaim":{"claimName":"model-pvc"}}]}}'
-
-# Wait for pod, copy model, clean up
-sleep 15
-oc exec -n mlops-workshop model-loader -- mkdir -p /models/fraud-model
-oc cp training/models/model.joblib model-loader:/models/fraud-model/model.joblib -n mlops-workshop
-oc delete pod model-loader -n mlops-workshop --force
+JUPYTER_POD=$(oc get pods -n mlops-workshop -l app=jupyter -o jsonpath='{.items[0].metadata.name}')
+oc exec -n mlops-workshop ${JUPYTER_POD} -- python -c "
+import boto3, joblib
+from botocore.client import Config
+s3 = boto3.client('s3', endpoint_url='http://minio-service.kubeflow.svc.cluster.local:9000',
+    aws_access_key_id='minio', aws_secret_access_key='minio123',
+    config=Config(signature_version='s3v4'), region_name='us-east-1')
+try: s3.create_bucket(Bucket='models')
+except: pass
+s3.upload_file('/tmp/models/model.joblib', 'models', 'fraud-detector/model.joblib')
+print('Uploaded to s3://models/fraud-detector/model.joblib')
+"
 ```
 
-Deploy InferenceService:
+Deploy InferenceService (MinIO-backed):
 ```bash
+oc apply -f k8s/minio-secret.yaml
 oc apply -f k8s/kserve-inferenceservice.yaml
 oc get inferenceservice -n mlops-workshop -w   # Wait for READY=True
 ```
@@ -182,7 +184,7 @@ Test inference:
 oc exec -n mlops-workshop ${JUPYTER_POD} -- curl -s -X POST \
   http://fraud-detector-predictor.mlops-workshop.svc.cluster.local/v1/models/fraud-detector:predict \
   -H "Content-Type: application/json" \
-  -d '{"instances": [[113.61, 0.53, 1.75, 1.0, 0.0, 0.0, 1.0]]}'
+  -d '{"instances": [[113.61, 0.53, 5.34, 1.0, 0.0, 0.0, 1.0]]}'
 # Expected: {"predictions":[1.0]}
 ```
 
