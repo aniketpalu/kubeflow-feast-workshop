@@ -215,9 +215,50 @@ def train_fraud_from_feast(
         xp = os.path.join(output_dir, "metrics.json")
 
         torch.save({"model_state_dict": m.state_dict(), "feature_columns": feature_cols, "label_column": label_column, "hidden_dim": hidden_dim}, mp)
+
+        from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+        import joblib
+        from sklearn.neural_network import MLPClassifier
+
+        clf = MLPClassifier(hidden_layer_sizes=(hidden_dim, hidden_dim // 2), activation="relu", max_iter=1)
+        dummy_X = np.zeros((2, len(feature_cols)))
+        dummy_y = np.array([0, 1])
+        clf.fit(dummy_X, dummy_y)
+
+        m.eval()
+        clf.coefs_ = [
+            m.net[0].weight.detach().cpu().numpy().T,
+            m.net[3].weight.detach().cpu().numpy().T,
+            m.net[5].weight.detach().cpu().numpy().T,
+        ]
+        clf.intercepts_ = [
+            m.net[0].bias.detach().cpu().numpy(),
+            m.net[3].bias.detach().cpu().numpy(),
+            m.net[5].bias.detach().cpu().numpy(),
+        ]
+
+        joblib_path = os.path.join(output_dir, "model.joblib")
+        joblib.dump(clf, joblib_path)
+        print(f"Exported sklearn model.joblib ({os.path.getsize(joblib_path)} bytes)")
+
+        y_pred = clf.predict(val_df[feature_cols].values)
+        y_prob = clf.predict_proba(val_df[feature_cols].values)[:, 1]
+        y_true = val_df[label_column].values.astype(int)
+        acc = accuracy_score(y_true, y_pred)
+        prec = precision_score(y_true, y_pred, zero_division=0)
+        rec = recall_score(y_true, y_pred, zero_division=0)
+        f1 = f1_score(y_true, y_pred, zero_division=0)
+        cm = confusion_matrix(y_true, y_pred).tolist()
+
+        metrics = {
+            "val_auc": float(auc), "accuracy": float(acc), "precision": float(prec),
+            "recall": float(rec), "f1_score": float(f1), "confusion_matrix": cm,
+            "epochs": num_epochs, "train_rows": len(train_df), "val_rows": len(val_df),
+            "feast_start": feast_start_date, "feast_end": feast_end_date, "namespace": ns,
+        }
         with open(xp, "w") as f:
-            json.dump({"val_auc": float(auc), "epochs": num_epochs, "train_rows": len(train_df), "val_rows": len(val_df), "feast_start": feast_start_date, "feast_end": feast_end_date, "namespace": ns}, f, indent=2)
-        print(f"Model saved: {mp} ({os.path.getsize(mp)} bytes)")
+            json.dump(metrics, f, indent=2)
+        print(f"Metrics: AUC={auc:.4f} Acc={acc:.4f} P={prec:.4f} R={rec:.4f} F1={f1:.4f}")
 
         import boto3
         from botocore.client import Config as BC
@@ -227,6 +268,7 @@ def train_fraud_from_feast(
         except Exception:
             pass
         s3.upload_file(mp, minio_bucket, f"{minio_model_prefix}/fraud_mlp_state_dict.pt")
+        s3.upload_file(joblib_path, minio_bucket, f"{minio_model_prefix}/model.joblib")
         s3.upload_file(xp, minio_bucket, f"{minio_model_prefix}/metrics.json")
         print(f"Uploaded to MinIO: s3://{minio_bucket}/{minio_model_prefix}/")
 
@@ -271,6 +313,7 @@ if __name__ == "__main__":
                 "scikit-learn",
                 "pyarrow",
                 "boto3",
+                "joblib",
                 "feast[postgres,grpc]",
                 "psycopg2-binary",
                 "grpcio",
