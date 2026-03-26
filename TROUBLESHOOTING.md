@@ -57,14 +57,35 @@ ss -tlnp | grep 6566
 
 ## Jupyter Issues
 
+### `mkdir: cannot create directory '/mnt/...': Permission denied`
+
+The Jupyter pod's PVC mount at `/mnt` is owned by `root:root`. The container needs to run as root to create directories there.
+
+**Cause:** The `anyuid` SCC is not granted to the `jupyter` ServiceAccount, or the pod spec is missing `securityContext.fsGroup: 0`.
+
+`fsGroup: 0` tells Kubernetes to set group ownership of the PVC to GID 0 and make it group-writable. The UBI9 image (UID 1001) is a member of group 0, so it can write without running as root.
+
+**Fix:**
+```bash
+# Grant anyuid SCC to the jupyter SA in your namespace
+oc adm policy add-scc-to-user anyuid -z jupyter -n <your-namespace>
+
+# Delete the crashing pod so the Deployment creates a new one
+oc delete pod -l app=jupyter -n <your-namespace>
+```
+
+If you don't have permission to grant SCCs, ask your instructor to run the command above.
+
+The `participant-setup.yaml` must include `securityContext.fsGroup: 0` in the pod spec. If you're using an older version of the YAML, re-pull the repo.
+
 ### Pod stuck in CrashLoopBackOff
 ```bash
-oc logs -l app=jupyter -n mlops-workshop --previous
+oc logs -l app=jupyter -n <your-namespace> --previous
 ```
 
 Common causes:
 - pip install failing: Network policy may block PyPI. Pre-build image or add network policy.
-- Permission issues: OpenShift random UID may conflict. Check SecurityContextConstraints.
+- Permission issues: See the `mkdir Permission denied` section above.
 
 ### Cannot access Jupyter
 ```bash

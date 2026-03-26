@@ -45,6 +45,8 @@ spec:
         app: jupyter
     spec:
       serviceAccountName: jupyter
+      securityContext:
+        fsGroup: 0
       containers:
         - name: jupyter
           image: registry.access.redhat.com/ubi9/python-311:latest
