@@ -1,0 +1,48 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: load-fraud-data
+  namespace: mlops-workshop
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: loader
+          image: registry.access.redhat.com/ubi9/python-311:latest
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              set -e
+              pip install --no-cache-dir pandas sqlalchemy psycopg2-binary
+              python -c "
+              import pandas as pd
+              from sqlalchemy import create_engine
+
+              print('Downloading dataset...')
+              url = 'https://raw.githubusercontent.com/aniketpalu/fraud-detection/feast_data_support/data/train.csv'
+              df = pd.read_csv(url)
+              print(f'Downloaded {len(df)} rows')
+
+              df['event_timestamp'] = pd.to_datetime(df['event_timestamp'], format='ISO8601')
+              df['created_timestamp'] = pd.to_datetime(df['created_timestamp'], format='ISO8601')
+
+              print('Loading into Postgres...')
+              engine = create_engine('postgresql://feast:feast@postgres.mlops-workshop.svc.cluster.local:5432/feast')
+              df.to_sql('fraud_transactions', engine, if_exists='replace', index=False, method='multi', chunksize=5000)
+
+              verify = pd.read_sql('SELECT COUNT(*) as cnt FROM fraud_transactions', engine)
+              print(f'Verified: {verify[\"cnt\"].iloc[0]} rows in Postgres')
+              print('Data load complete.')
+              "
+          resources:
+            requests:
+              memory: 512Mi
+              cpu: 250m
+            limits:
+              memory: 1Gi
+              cpu: 500m

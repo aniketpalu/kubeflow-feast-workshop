@@ -1,0 +1,87 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secret
+  namespace: mlops-workshop
+stringData:
+  POSTGRES_DB: feast
+  POSTGRES_USER: feast
+  POSTGRES_PASSWORD: feast
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-sql
+  namespace: mlops-workshop
+data:
+  01-init.sql: |
+    CREATE TABLE IF NOT EXISTS fraud_transactions (
+        entity_id INTEGER,
+        distance_from_home DOUBLE PRECISION,
+        distance_from_last_transaction DOUBLE PRECISION,
+        ratio_to_median_purchase_price DOUBLE PRECISION,
+        repeat_retailer DOUBLE PRECISION,
+        used_chip DOUBLE PRECISION,
+        used_pin_number DOUBLE PRECISION,
+        online_order DOUBLE PRECISION,
+        fraud DOUBLE PRECISION,
+        created_timestamp TIMESTAMPTZ,
+        event_timestamp TIMESTAMPTZ
+    );
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: mlops-workshop
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: quay.io/aniket-redhat/postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: postgres-secret
+          volumeMounts:
+            - mountPath: /var/lib/postgresql
+              name: postgresdata
+            - mountPath: /docker-entrypoint-initdb.d
+              name: init-sql
+      volumes:
+        - name: postgresdata
+          emptyDir: {}
+        - name: init-sql
+          configMap:
+            name: postgres-init-sql
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: mlops-workshop
+  labels:
+    app: postgres
+spec:
+  type: ClusterIP
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+      protocol: TCP

@@ -1,0 +1,13 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: jupyter-route
+  namespace: mlops-workshop
+spec:
+  to:
+    kind: Service
+    name: jupyter-service
+  port:
+    targetPort: jupyter
+  tls:
+    termination: edge

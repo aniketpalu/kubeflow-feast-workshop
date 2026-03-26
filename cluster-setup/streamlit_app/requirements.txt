@@ -1,0 +1,8 @@
+streamlit
+feast[postgres,grpc]
+psycopg2-binary
+pandas
+requests
+pyarrow
+grpcio
+grpcio-tools

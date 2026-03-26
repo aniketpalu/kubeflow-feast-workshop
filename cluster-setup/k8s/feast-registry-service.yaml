@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: feast-registry-service
+  namespace: mlops-workshop
+  labels:
+    app: feast-registry
+spec:
+  type: ClusterIP
+  selector:
+    app: jupyter
+  ports:
+    - name: feast-registry
+      port: 6567
+      targetPort: 6567

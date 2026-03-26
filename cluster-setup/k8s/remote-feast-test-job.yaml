@@ -1,0 +1,77 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: remote-feast-test
+  namespace: mlops-workshop
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: feast-client
+          image: registry.access.redhat.com/ubi9/python-311:latest
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              set -e
+              pip install --no-cache-dir "feast[postgres,grpc]" psycopg2-binary pandas pyarrow grpcio grpcio-tools
+
+              cd /feast
+              echo "=== Remote Feast Test (provider: remote) ==="
+              echo "This pod has NO direct Postgres access for Feast."
+              echo "It connects to Feast servers via k8s Services."
+              echo ""
+
+              python -c "
+              import pandas as pd
+              from feast import FeatureStore
+              from datetime import datetime
+
+              store = FeatureStore(repo_path='/feast')
+
+              print('Registry type:', store.config.registry.registry_type)
+              print('Offline store type:', store.config.offline_store.type)
+              print()
+
+              print('=== Listing feature views from remote registry ===')
+              for fv in store.list_feature_views():
+                  print(f'  {fv.name}: {[f.name for f in fv.features]}')
+              print()
+
+              print('=== Fetching historical features via remote offline store ===')
+              from datetime import datetime
+
+              features = store.get_historical_features(
+                  entity_df=None,
+                  features=[
+                      'fraud_features:distance_from_home',
+                      'fraud_features:distance_from_last_transaction',
+                      'fraud_features:ratio_to_median_purchase_price',
+                      'fraud_features:repeat_retailer',
+                      'fraud_features:used_chip',
+                      'fraud_features:used_pin_number',
+                      'fraud_features:online_order',
+                  ],
+                  start_date=datetime(2025, 1, 1),
+                  end_date=datetime(2025, 2, 1),
+              )
+
+              result = features.to_df()
+              print(f'Result shape: {result.shape}')
+              print(f'Columns: {list(result.columns)}')
+              print(result.to_string())
+              print()
+              print('REMOTE FEAST ACCESS (provider: remote): SUCCESS')
+              print('Training jobs can fetch historical features without direct DB access.')
+              "
+          volumeMounts:
+            - name: feast-config
+              mountPath: /feast
+      volumes:
+        - name: feast-config
+          configMap:
+            name: feast-remote-config
